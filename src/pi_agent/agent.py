@@ -1,0 +1,289 @@
+"""The agent loop.
+
+This is the heart of pi: a ReAct-style tool-use loop.
+
+    user prompt
+        │
+        ▼
+   ┌─► ask the LLM ─────────────► no tool calls ──► return final text
+   │        │
+   │   tool calls?
+   │        ▼
+   │   run each tool (with optional confirmation / sub-agent delegation)
+   │        ▼
+   └── feed results back to the LLM   (repeat, up to max_iterations)
+
+The loop is provider-agnostic (talks to :class:`LLMProvider`) and UI-agnostic
+(emits events via a callback). It keeps the transcript in a **neutral** shape so
+the same conversation can be handed to any provider. Transient model errors are
+retried with backoff; the model may also ``delegate`` a subtask to a sub-agent.
+"""
+
+from __future__ import annotations
+
+import random
+import time
+from dataclasses import dataclass, field, replace
+from typing import Any, Callable
+
+from pi_agent import guardrails
+from pi_agent.config import AgentConfig
+from pi_agent.llm import (
+    AssistantResponse,
+    LLMProvider,
+    NeutralMessage,
+    ToolCall,
+    ToolResult,
+    Usage,
+)
+from pi_agent.sandbox import Sandbox
+from pi_agent.tools.registry import ToolRegistry
+
+EventCallback = Callable[[str, Any], None]
+ConfirmCallback = Callable[[ToolCall], bool]
+
+# 4xx (except 408/409/429) are permanent — retrying wastes tokens. Everything
+# else (429, 5xx, timeouts, dropped connections) is worth retrying.
+_PERMANENT_CODES = {400, 401, 403, 404, 422}
+_TRANSIENT_NAME_HINTS = (
+    "ratelimit",
+    "timeout",
+    "connection",
+    "overloaded",
+    "serviceunavailable",
+    "internalserver",
+    "apistatus",
+)
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Decide whether a model-call error is worth retrying."""
+    code = getattr(exc, "status_code", None)
+    if isinstance(code, int):
+        return code not in _PERMANENT_CODES and (code in (408, 409, 429) or code >= 500)
+    name = type(exc).__name__.lower()
+    return any(hint in name for hint in _TRANSIENT_NAME_HINTS)
+
+
+REFLECTION_PROMPT = (
+    "Review the work you just did against the user's original request: re-read "
+    "any files you changed and check for bugs, missed requirements, or broken "
+    "imports. Fix real problems with tools. Then give the final answer — "
+    "corrected if you fixed something, otherwise restate it briefly."
+)
+
+
+@dataclass
+class Agent:
+    provider: LLMProvider
+    registry: ToolRegistry
+    sandbox: Sandbox
+    config: AgentConfig
+    on_event: EventCallback | None = None
+    confirm: ConfirmCallback | None = None
+    messages: list[NeutralMessage] = field(default_factory=list)
+    total_usage: Usage = field(default_factory=Usage)
+
+    def _emit(self, kind: str, payload: Any) -> None:
+        if self.on_event is not None:
+            self.on_event(kind, payload)
+
+    def reset(self) -> None:
+        """Clear the conversation transcript (keeps cumulative usage)."""
+        self.messages = []
+
+    def _should_run(self, call: ToolCall) -> bool:
+        """Confirm a mutating tool unless auto-approve or no confirm hook set."""
+        tool = self.registry.get(call.name)
+        if tool is None or not tool.mutating or self.config.auto_approve:
+            return True
+        if self.confirm is None:
+            return True
+        return self.confirm(call)
+
+    def _with_retry(self, fn: Callable[[], Any]) -> Any:
+        """Call ``fn``; retry transient errors up to ``config.max_retries``."""
+        attempt = 0
+        while True:
+            try:
+                return fn()
+            except Exception as exc:
+                attempt += 1
+                if attempt > self.config.max_retries or not _is_transient(exc):
+                    raise
+                self._emit(
+                    "info",
+                    f"Transient error ({type(exc).__name__}); "
+                    f"retrying {attempt}/{self.config.max_retries}…",
+                )
+                # Exponential backoff with full jitter: spread concurrent retries
+                # instead of having them all wake at the same 1s/2s/4s marks.
+                time.sleep(random.uniform(0, min(2 ** (attempt - 1), 16)))
+
+    def _history_for_request(self) -> list[NeutralMessage]:
+        """The transcript slice to send, trimmed to ``max_history_messages``.
+
+        Long sessions would otherwise grow past the model's context window. We
+        keep the most recent messages but snap the start to a ``user`` boundary,
+        so an ``assistant`` tool call is never sent without its ``tool`` result
+        (which providers reject). The full transcript stays in ``self.messages``.
+        """
+        cap = self.config.max_history_messages
+        if cap <= 0 or len(self.messages) <= cap:
+            return self.messages
+        start = len(self.messages) - cap
+        while start < len(self.messages) and self.messages[start]["role"] != "user":
+            start += 1
+        if start >= len(self.messages):  # no boundary in window -> last user turn
+            start = max(
+                (i for i, m in enumerate(self.messages) if m["role"] == "user"),
+                default=0,
+            )
+        return self.messages[start:]
+
+    def _ask(self, tools: list[dict[str, Any]]) -> tuple[AssistantResponse, bool]:
+        """One model turn (with retry). Returns (response, streamed?)."""
+        messages = self._history_for_request()
+        can_stream = (
+            self.config.stream
+            and getattr(self.provider, "supports_streaming", False)
+            and hasattr(self.provider, "stream")
+            and self.on_event is not None
+        )
+        if can_stream:
+            # Not wrapped in retry: a retry after partial streaming would re-emit
+            # already-shown deltas (duplicated text). Streaming is best-effort.
+            response = self.provider.stream(  # type: ignore[attr-defined]
+                self.config.system_prompt,
+                messages,
+                tools,
+                lambda delta: self._emit("assistant_delta", delta),
+            )
+            return response, True
+        response = self._with_retry(
+            lambda: self.provider.complete(self.config.system_prompt, messages, tools)
+        )
+        return response, False
+
+    def _dispatch(self, call: ToolCall) -> str:
+        """Run one tool call through the guardrails, then return its output.
+
+        The single choke-point every tool flows through, so the CLI and the
+        web app are guarded identically: block secret exfiltration, force
+        confirmation on destructive shell commands (even under auto-approve),
+        then redact + spotlight the result.
+        """
+        gr = self.config.guardrails
+
+        block = guardrails.check_exfiltration(call.name, call.args, gr)
+        if block is not None:
+            self._emit("info", f"🛡️ {block}")
+            return block
+
+        if call.name == "delegate":
+            return self._run_subagent(call.args)
+
+        forced_confirm = guardrails.is_destructive(call.name, call.args, gr)
+        if forced_confirm and not self._confirm_destructive(call):
+            return "Blocked by guardrail: destructive command not confirmed."
+        if not forced_confirm and not self._should_run(call):
+            return "Skipped by user."
+
+        output = self.registry.run(call.name, call.args, self.sandbox)
+        return guardrails.guard_output(call.name, output, gr)
+
+    def _confirm_destructive(self, call: ToolCall) -> bool:
+        """Confirm a destructive command — ignores auto-approve on purpose."""
+        self._emit("info", f"⚠️ destructive command flagged: {call.name}")
+        if self.confirm is None:
+            return False  # non-interactive: refuse rather than run blindly
+        return self.confirm(call)
+
+    def _run_subagent(self, args: dict[str, Any]) -> str:
+        """Run a focused sub-agent to completion on the same workspace."""
+        task = (args.get("task") or "").strip()
+        if not task:
+            return "Error: 'task' is required for delegate."
+        self._emit("info", f"🤝 delegating to sub-agent: {task[:100]}")
+        sub = Agent(
+            provider=self.provider,
+            registry=self.registry.without("delegate"),  # no recursive delegation
+            sandbox=self.sandbox,
+            config=replace(self.config, max_iterations=min(self.config.max_iterations, 12)),
+        )
+        try:
+            result = sub.run(task)
+        except Exception as exc:  # report failure back to the parent, don't crash
+            return f"Sub-agent failed: {type(exc).__name__}."
+        self.total_usage += sub.total_usage
+        return result or "(sub-agent returned no text)"
+
+    def run(self, user_input: str) -> str:
+        """Process one user turn; returns the final assistant text.
+
+        With ``config.reflect`` on, a successful answer is followed by one
+        bounded self-review turn (see :meth:`_reflection_pass`).
+        """
+        answer = self._loop(user_input)
+        if self.config.reflect and answer and not answer.startswith("Stopped:"):
+            answer = self._reflection_pass(answer)
+        return answer
+
+    def _reflection_pass(self, answer: str) -> str:
+        """One self-review turn: re-check the work, fix real problems, restate.
+
+        Bounded (≤5 iterations) and never recursive — ``reflect`` is forced
+        off for the review itself. Falls back to the original answer if the
+        review produces no text.
+        """
+        self._emit("info", "🔍 reflection pass — reviewing the work…")
+        saved_reflect = self.config.reflect
+        saved_iters = self.config.max_iterations
+        self.config.reflect = False
+        self.config.max_iterations = min(saved_iters, 5)
+        try:
+            reviewed = self._loop(REFLECTION_PROMPT)
+        finally:
+            self.config.reflect = saved_reflect
+            self.config.max_iterations = saved_iters
+        return reviewed or answer
+
+    def _loop(self, user_input: str) -> str:
+        """The tool-use loop for one user message."""
+        self.messages.append({"role": "user", "content": user_input})
+        tools = self.registry.schemas()
+
+        for _ in range(self.config.max_iterations):
+            response, streamed = self._ask(tools)
+
+            self.total_usage += response.usage
+            self._emit("usage", {"turn": response.usage, "total": self.total_usage})
+
+            self.messages.append(
+                {
+                    "role": "assistant",
+                    "content": response.text,
+                    "tool_calls": response.tool_calls,
+                }
+            )
+
+            if response.text and not streamed:
+                self._emit("assistant_text", response.text)
+
+            if not response.tool_calls:
+                return response.text
+
+            results: list[ToolResult] = []
+            for call in response.tool_calls:
+                self._emit("tool_call", call)
+                if call.name == "update_plan":
+                    self._emit("plan", call.args.get("steps", []))
+
+                output = self._dispatch(call)
+                self._emit("tool_result", {"call": call, "output": output})
+                results.append(ToolResult(id=call.id, name=call.name, output=output))
+
+            self.messages.append({"role": "tool", "results": results})
+
+        self._emit("info", "Reached max iterations.")
+        return "Stopped: reached the maximum number of tool iterations."

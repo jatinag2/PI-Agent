@@ -1,0 +1,641 @@
+"""LLM provider abstraction — the seam that makes pi multi-provider.
+
+The agent loop talks to an LLM only through :class:`LLMProvider`, and it keeps
+its transcript in a **provider-neutral** shape (see :mod:`pi_agent.agent`).
+Each provider translates that neutral transcript into its own wire format:
+
+* Anthropic uses ``content`` blocks (``text`` / ``tool_use`` / ``tool_result``).
+* OpenAI uses ``tool_calls`` on the assistant message and ``role="tool"``
+  follow-ups.
+
+Because the transcript is neutral, you can switch models *mid-conversation*
+(``/model``) and even cross providers. Tests use a scripted fake provider, so
+they never need an API key or network access.
+
+No API key is ever read, stored, or logged here beyond handing it to the
+vendor SDK — keys come from the environment (see :mod:`pi_agent.cli`).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any, Callable, Protocol, runtime_checkable
+
+# --- core data types -------------------------------------------------------
+
+
+@dataclass
+class ToolCall:
+    """A single tool invocation requested by the model."""
+
+    id: str
+    name: str
+    args: dict[str, Any]
+
+
+@dataclass
+class ToolResult:
+    """The output of running one :class:`ToolCall`."""
+
+    id: str
+    name: str
+    output: str
+
+
+@dataclass
+class Usage:
+    """Token counts for one or more model turns."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    def __add__(self, other: "Usage") -> "Usage":
+        return Usage(
+            self.input_tokens + other.input_tokens,
+            self.output_tokens + other.output_tokens,
+        )
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+
+@dataclass
+class AssistantResponse:
+    """Normalised result of one model turn (provider-independent)."""
+
+    text: str
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    usage: Usage = field(default_factory=Usage)
+    stop_reason: str = ""
+
+
+# --- cost estimation -------------------------------------------------------
+
+# Approximate USD per 1M tokens (input, output). Matched by substring on the
+# model id. These are estimates for display only — update as prices change.
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # Anthropic. Order matters: more specific keys must precede shorter ones that
+    # would also substring-match (e.g. "gemini-3.1-pro" before "gemini").
+    "claude-fable-5": (15.0, 75.0),
+    "claude-opus": (15.0, 75.0),
+    "claude-sonnet": (3.0, 15.0),
+    "claude-haiku": (0.80, 4.0),
+    # OpenAI.
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4o": (2.50, 10.0),
+    "gpt-4.1-mini": (0.40, 1.60),
+    "gpt-4.1": (2.0, 8.0),
+    "o4-mini": (1.10, 4.40),
+    "o3": (2.0, 8.0),
+    # Gemini (paid-tier estimate; the flash models also have a free tier).
+    "gemini-3.1-pro": (1.25, 5.0),
+    "gemini-3.5-flash": (0.075, 0.30),
+    "gemini-2.5-flash": (0.075, 0.30),
+}
+
+
+def estimate_cost(model: str, usage: Usage) -> float | None:
+    """Rough USD cost for ``usage`` on ``model``; ``None`` if price unknown."""
+    if ":free" in model:  # OpenRouter free models
+        return 0.0
+    for key, (in_price, out_price) in MODEL_PRICING.items():
+        if key in model:
+            return (
+                usage.input_tokens / 1_000_000 * in_price
+                + usage.output_tokens / 1_000_000 * out_price
+            )
+    return None
+
+
+# --- neutral transcript -> provider wire formats ---------------------------
+# A neutral message is one of:
+#   {"role": "user", "content": str}
+#   {"role": "assistant", "content": str, "tool_calls": list[ToolCall]}
+#   {"role": "tool", "results": list[ToolResult]}
+
+NeutralMessage = dict[str, Any]
+
+
+def to_anthropic_messages(messages: list[NeutralMessage]) -> list[dict[str, Any]]:
+    """Translate the neutral transcript into Anthropic Messages format."""
+    out: list[dict[str, Any]] = []
+    for msg in messages:
+        role = msg["role"]
+        if role == "user":
+            out.append({"role": "user", "content": msg["content"]})
+        elif role == "assistant":
+            blocks: list[dict[str, Any]] = []
+            if msg.get("content"):
+                blocks.append({"type": "text", "text": msg["content"]})
+            for call in msg.get("tool_calls", []):
+                blocks.append(
+                    {"type": "tool_use", "id": call.id, "name": call.name, "input": call.args}
+                )
+            out.append({"role": "assistant", "content": blocks or msg.get("content", "")})
+        elif role == "tool":
+            out.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": r.id, "content": r.output}
+                        for r in msg["results"]
+                    ],
+                }
+            )
+    return out
+
+
+def to_openai_messages(system: str, messages: list[NeutralMessage]) -> list[dict[str, Any]]:
+    """Translate the neutral transcript into OpenAI Chat Completions format."""
+    out: list[dict[str, Any]] = [{"role": "system", "content": system}]
+    for msg in messages:
+        role = msg["role"]
+        if role == "user":
+            out.append({"role": "user", "content": msg["content"]})
+        elif role == "assistant":
+            # Some OpenAI-compatible servers (e.g. Groq) reject ``content: null``
+            # on an assistant message; an empty string is accepted everywhere.
+            entry: dict[str, Any] = {"role": "assistant", "content": msg.get("content") or ""}
+            calls = msg.get("tool_calls", [])
+            if calls:
+                entry["tool_calls"] = [
+                    {
+                        "id": c.id,
+                        "type": "function",
+                        "function": {"name": c.name, "arguments": json.dumps(c.args)},
+                    }
+                    for c in calls
+                ]
+            out.append(entry)
+        elif role == "tool":
+            for r in msg["results"]:
+                out.append({"role": "tool", "tool_call_id": r.id, "content": r.output})
+    return out
+
+
+def to_openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Wrap neutral tool specs into OpenAI's ``function`` tool format."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t["input_schema"],
+            },
+        }
+        for t in tools
+    ]
+
+
+# --- provider interface ----------------------------------------------------
+
+DeltaCallback = Callable[[str], None]
+
+
+@runtime_checkable
+class LLMProvider(Protocol):
+    """Interface every provider implements."""
+
+    name: str
+    model: str
+
+    # Read-only so both a computed @property (Anthropic) and a plain field
+    # (OpenAI) satisfy it.
+    @property
+    def supports_streaming(self) -> bool: ...
+
+    def complete(
+        self, system: str, messages: list[NeutralMessage], tools: list[dict[str, Any]]
+    ) -> AssistantResponse: ...
+
+
+@dataclass
+class AnthropicProvider:
+    """Anthropic Claude provider (Messages API with tool use)."""
+
+    model: str
+    max_tokens: int = 4096
+    thinking: bool = False
+    thinking_budget: int = 2048
+    api_key: str | None = None
+    name: str = field(default="anthropic", init=False)
+
+    def __post_init__(self) -> None:
+        # Lazy import so importing this module (e.g. in tests) needs neither the
+        # anthropic package nor an API key.
+        import anthropic
+
+        self._client = anthropic.Anthropic(api_key=self.api_key)
+
+    @property
+    def supports_streaming(self) -> bool:
+        # Extended thinking is sent over the non-streaming path for simplicity.
+        return not self.thinking
+
+    def _request_kwargs(
+        self, system: str, messages: list[NeutralMessage], tools: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        max_tokens = self.max_tokens
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": to_anthropic_messages(messages),
+            "tools": tools,
+        }
+        if self.thinking:
+            # max_tokens must exceed the thinking budget.
+            kwargs["max_tokens"] = max(max_tokens, self.thinking_budget + 1024)
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": self.thinking_budget}
+        return kwargs
+
+    @staticmethod
+    def _parse(content: list[Any]) -> tuple[str, list[ToolCall]]:
+        text_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
+        for block in content:
+            if block.type == "text":
+                text_parts.append(block.text)
+            elif block.type == "tool_use":
+                tool_calls.append(
+                    ToolCall(id=block.id, name=block.name, args=dict(block.input or {}))
+                )
+            # "thinking" blocks are intentionally not surfaced to the transcript.
+        return "".join(text_parts), tool_calls
+
+    def complete(
+        self, system: str, messages: list[NeutralMessage], tools: list[dict[str, Any]]
+    ) -> AssistantResponse:
+        response = self._client.messages.create(**self._request_kwargs(system, messages, tools))
+        text, tool_calls = self._parse(response.content)
+        return AssistantResponse(
+            text=text,
+            tool_calls=tool_calls,
+            usage=Usage(response.usage.input_tokens, response.usage.output_tokens),
+            stop_reason=response.stop_reason or "",
+        )
+
+    def stream(
+        self,
+        system: str,
+        messages: list[NeutralMessage],
+        tools: list[dict[str, Any]],
+        on_delta: DeltaCallback,
+    ) -> AssistantResponse:
+        """Stream text deltas via ``on_delta``; return the full normalised turn."""
+        kwargs = self._request_kwargs(system, messages, tools)
+        with self._client.messages.stream(**kwargs) as stream:
+            for chunk in stream.text_stream:
+                on_delta(chunk)
+            final = stream.get_final_message()
+        text, tool_calls = self._parse(final.content)
+        return AssistantResponse(
+            text=text,
+            tool_calls=tool_calls,
+            usage=Usage(final.usage.input_tokens, final.usage.output_tokens),
+            stop_reason=final.stop_reason or "",
+        )
+
+
+def _coerce_args(raw: str | None) -> dict[str, Any]:
+    """Parse a tool-call argument JSON string, tolerating junk from weak models."""
+    try:
+        parsed = json.loads(raw or "{}")
+    except (ValueError, TypeError):
+        return {}
+    # Weaker models sometimes emit "null" or a non-object — coerce to {}.
+    return parsed if isinstance(parsed, dict) else {}
+
+
+@dataclass
+class OpenAIProvider:
+    """OpenAI (and OpenAI-compatible) provider via Chat Completions."""
+
+    model: str
+    api_key: str | None = None
+    base_url: str | None = None
+    max_tokens: int = 4096
+    name: str = field(default="openai", init=False)
+    supports_streaming: bool = field(default=True, init=False)
+
+    def __post_init__(self) -> None:
+        import openai
+
+        self._client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
+
+    def _payload(
+        self, system: str, messages: list[NeutralMessage], tools: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        return {
+            "model": self.model,
+            "messages": to_openai_messages(system, messages),
+            "tools": to_openai_tools(tools),
+            "max_tokens": self.max_tokens,  # explicit: some proxies (EURI) inject a too-large default
+        }
+
+    def complete(
+        self, system: str, messages: list[NeutralMessage], tools: list[dict[str, Any]]
+    ) -> AssistantResponse:
+        response = self._client.chat.completions.create(**self._payload(system, messages, tools))
+        choice = response.choices[0]
+        message = choice.message
+        tool_calls = [
+            ToolCall(id=tc.id, name=tc.function.name, args=_coerce_args(tc.function.arguments))
+            for tc in (message.tool_calls or [])
+        ]
+        usage = Usage(0, 0)
+        if response.usage is not None:
+            usage = Usage(response.usage.prompt_tokens, response.usage.completion_tokens)
+        return AssistantResponse(
+            text=message.content or "",
+            tool_calls=tool_calls,
+            usage=usage,
+            stop_reason=choice.finish_reason or "",
+        )
+
+    def _open_stream(self, payload: dict[str, Any]) -> Any:
+        """Open a streaming completion, asking for usage when the server allows.
+
+        ``stream_options`` is an OpenAI extension; some compatible servers reject
+        it. If so, fall back to a plain stream (usage just won't be reported).
+        """
+        try:
+            return self._client.chat.completions.create(
+                **payload, stream=True, stream_options={"include_usage": True}
+            )
+        except Exception as exc:  # noqa: BLE001 - re-raised unless it's the known case
+            if isinstance(exc, TypeError) or getattr(exc, "status_code", None) == 400:
+                return self._client.chat.completions.create(**payload, stream=True)
+            raise
+
+    @staticmethod
+    def _consume_stream(chunks: Any, on_delta: DeltaCallback) -> AssistantResponse:
+        """Assemble a streamed Chat Completion into one normalised turn.
+
+        Text deltas are forwarded to ``on_delta`` as they arrive; tool calls are
+        delivered in fragments (id, name, then partial-JSON arguments) keyed by
+        ``index``, so they are accumulated and parsed only once the stream ends.
+        """
+        text_parts: list[str] = []
+        frags: dict[int, dict[str, str]] = {}
+        usage = Usage(0, 0)
+        stop_reason = ""
+        for chunk in chunks:
+            cu = getattr(chunk, "usage", None)
+            if cu is not None:
+                usage = Usage(cu.prompt_tokens, cu.completion_tokens)
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue  # usage-only final chunk has no choices
+            choice = choices[0]
+            if getattr(choice, "finish_reason", None):
+                stop_reason = choice.finish_reason
+            delta = getattr(choice, "delta", None)
+            if delta is None:
+                continue
+            content = getattr(delta, "content", None)
+            if content:
+                text_parts.append(content)
+                on_delta(content)
+            for tc in getattr(delta, "tool_calls", None) or []:
+                frag = frags.setdefault(getattr(tc, "index", 0), {"id": "", "name": "", "args": ""})
+                if getattr(tc, "id", None):
+                    frag["id"] = tc.id
+                fn = getattr(tc, "function", None)
+                if fn is not None:
+                    if getattr(fn, "name", None):
+                        frag["name"] = fn.name
+                    if getattr(fn, "arguments", None):
+                        frag["args"] += fn.arguments
+        tool_calls = [
+            ToolCall(id=frags[i]["id"], name=frags[i]["name"], args=_coerce_args(frags[i]["args"]))
+            for i in sorted(frags)
+        ]
+        return AssistantResponse(
+            text="".join(text_parts),
+            tool_calls=tool_calls,
+            usage=usage,
+            stop_reason=stop_reason,
+        )
+
+    def stream(
+        self,
+        system: str,
+        messages: list[NeutralMessage],
+        tools: list[dict[str, Any]],
+        on_delta: DeltaCallback,
+    ) -> AssistantResponse:
+        """Stream text deltas via ``on_delta``; return the full normalised turn."""
+        chunks = self._open_stream(self._payload(system, messages, tools))
+        return self._consume_stream(chunks, on_delta)
+
+
+def infer_provider(model: str) -> str:
+    """Guess the provider from a model id."""
+    if model.startswith(("gpt", "o1", "o3", "o4", "chatgpt")):
+        return "openai"
+    if model.startswith("gemini"):
+        return "gemini"
+    if model.startswith("glm"):
+        return "glm"
+    return "anthropic"
+
+
+@dataclass(frozen=True)
+class ProviderSpec:
+    """Static facts about a provider, used to build it and to drive the UI."""
+
+    name: str
+    kind: str  # "anthropic" or "openai" (which client to use)
+    default_model: str
+    key_env: str  # environment variable holding the key
+    key_url: str  # where a user gets a key
+    base_url: str | None = None  # OpenAI-compatible endpoint (Groq / OpenRouter / Ollama)
+    free: bool = False  # has a usable free tier (no credit card)
+    requires_key: bool = True  # Ollama (local) needs no key
+    models: tuple[str, ...] = ()  # suggested model ids for the UI picker (any id still works)
+
+
+# Groq and OpenRouter are OpenAI-compatible, so they reuse OpenAIProvider with a
+# base_url — no new client code. Both offer free keys + strong free models.
+PROVIDERS: dict[str, ProviderSpec] = {
+    "anthropic": ProviderSpec(
+        "anthropic",
+        "anthropic",
+        "claude-sonnet-4-6",
+        "ANTHROPIC_API_KEY",
+        "https://console.anthropic.com/settings/keys",
+        models=(
+            "claude-fable-5",
+            "claude-sonnet-4-6",
+            "claude-opus-4-8",
+            "claude-haiku-4-5-20251001",
+        ),
+    ),
+    "openai": ProviderSpec(
+        "openai",
+        "openai",
+        "gpt-4o-mini",
+        "OPENAI_API_KEY",
+        "https://platform.openai.com/api-keys",
+        models=("gpt-4o-mini", "gpt-4o", "gpt-4.1", "o4-mini"),
+    ),
+    "groq": ProviderSpec(
+        "groq",
+        "openai",
+        "llama-3.3-70b-versatile",
+        "GROQ_API_KEY",
+        "https://console.groq.com/keys",
+        base_url="https://api.groq.com/openai/v1",
+        free=True,
+        models=("llama-3.3-70b-versatile", "llama-3.1-8b-instant"),
+    ),
+    "openrouter": ProviderSpec(
+        "openrouter",
+        "openai",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "OPENROUTER_API_KEY",
+        "https://openrouter.ai/keys",
+        base_url="https://openrouter.ai/api/v1",
+        free=True,
+        models=("meta-llama/llama-3.3-70b-instruct:free", "deepseek/deepseek-chat"),
+    ),
+    # Google Gemini exposes an OpenAI-compatible endpoint, so it reuses
+    # OpenAIProvider. Free tier + paid (Pro) models; supports function calling.
+    "gemini": ProviderSpec(
+        "gemini",
+        "openai",
+        "gemini-3.5-flash",
+        "GEMINI_API_KEY",
+        "https://aistudio.google.com/apikey",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        free=True,
+        models=("gemini-3.5-flash", "gemini-3.1-pro", "gemini-3.1-flash", "gemini-2.5-flash"),
+    ),
+    # EURI — OpenAI-compatible aggregator (40+ models) with a free tier. Tool
+    # calling depends on EURI passing `tools` through to a tool-capable model;
+    # use "list models" + try one if the agent doesn't call tools.
+    "euri": ProviderSpec(
+        "euri",
+        "openai",
+        "gpt-4o-mini",
+        "EURI_API_KEY",
+        "https://docs.euri.ai/",
+        base_url="https://api.euron.one/api/v1/euri",
+        free=True,
+        models=("gpt-4o-mini", "gpt-4.1-nano"),  # 40+ available — use "list models" for the rest
+    ),
+    # Z.ai / Zhipu GLM — OpenAI-compatible; GLM models support tool calling.
+    # Free model: glm-4.5-flash; GLM-5/5.1 are paid. Real ids come from "list models".
+    "glm": ProviderSpec(
+        "glm",
+        "openai",
+        "glm-4.5-flash",
+        "ZAI_API_KEY",
+        "https://z.ai/manage-apikey/apikey-list",
+        base_url="https://api.z.ai/api/paas/v4",
+        free=True,  # glm-4.5-flash is free; GLM-5 models are paid
+        models=("glm-4.5-flash", "glm-5.1", "glm-5", "glm-5-turbo", "glm-4.5-air"),
+    ),
+    # Local + private + free: runs against an Ollama server on the same machine.
+    # No key needed; only reachable when pi runs locally (not on cloud hosting).
+    "ollama": ProviderSpec(
+        "ollama",
+        "openai",
+        "qwen2.5-coder:7b",
+        "OLLAMA_API_KEY",
+        "https://ollama.com/download",
+        base_url="http://localhost:11434/v1",
+        free=True,
+        requires_key=False,
+        models=("qwen2.5-coder:7b", "llama3.1", "deepseek-coder"),
+    ),
+}
+
+
+# When the user gives no provider/model, auto-detect from whichever API keys
+# are set: strongest paid first, then the strongest free tiers, then the
+# aggregators. Local Ollama is the last resort (only if its server answers).
+DETECTION_ORDER = ("anthropic", "openai", "gemini", "groq", "glm", "euri", "openrouter")
+
+
+def ollama_running(host: str = "localhost", port: int = 11434, timeout: float = 0.2) -> bool:
+    """True when a local Ollama server is listening on its default port."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def detect_provider(env: Mapping[str, str] | None = None) -> str | None:
+    """Pick the best configured provider from the API keys in the environment.
+
+    Checked in :data:`DETECTION_ORDER`; falls back to local Ollama when no key
+    is set but a server is reachable. ``None`` means nothing is configured —
+    the CLI shows first-run onboarding instead of an error.
+    """
+    environ: Mapping[str, str] = os.environ if env is None else env
+    for name in DETECTION_ORDER:
+        if environ.get(PROVIDERS[name].key_env):
+            return name
+    if ollama_running():
+        return "ollama"
+    return None
+
+
+def build_provider(
+    model: str,
+    provider: str | None = None,
+    *,
+    max_tokens: int = 4096,
+    thinking: bool = False,
+    thinking_budget: int = 2048,
+    api_key: str | None = None,
+) -> LLMProvider:
+    """Construct a provider for ``model`` (provider inferred unless given).
+
+    ``api_key`` is passed straight to the vendor SDK (used by the web demo to
+    run on the visitor's own key). When ``None`` the SDK reads it from the
+    environment. The key is never stored or logged by pi.
+    """
+    chosen = provider or infer_provider(model)
+    spec = PROVIDERS.get(chosen)
+    kind = spec.kind if spec else ("openai" if chosen == "openai" else "anthropic")
+    base_url = spec.base_url if spec else None
+
+    # Keyless local providers (Ollama) still need a non-empty string for the SDK.
+    if spec is not None and not spec.requires_key and not api_key:
+        api_key = "ollama"
+
+    if kind == "openai":
+        return OpenAIProvider(
+            model=model, api_key=api_key, base_url=base_url, max_tokens=max_tokens
+        )
+    return AnthropicProvider(
+        model=model,
+        max_tokens=max_tokens,
+        thinking=thinking,
+        thinking_budget=thinking_budget,
+        api_key=api_key,
+    )
+
+
+def list_models(provider: str | None = None, *, api_key: str | None = None) -> list[str]:
+    """Return the model ids this key can actually use (the provider's own list).
+
+    The single source of truth — provider model ids drift, so ask the API rather
+    than trusting a hardcoded list. Raises if the key/provider is unreachable.
+    """
+    spec = PROVIDERS.get(provider or "")
+    seed = spec.default_model if spec else "x"
+    client = getattr(build_provider(seed, provider, api_key=api_key), "_client", None)
+    if client is None:
+        return []
+    return sorted({getattr(m, "id", str(m)) for m in client.models.list()})
