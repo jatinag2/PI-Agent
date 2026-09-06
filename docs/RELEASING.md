@@ -10,13 +10,13 @@ GitHub release with the matching CHANGELOG section.
 2. Open <https://pypi.org/manage/account/publishing/> → **Add a new pending
    publisher** and fill the form exactly:
 
-   | Field | Value |
-   |---|---|
+   | Field             | Value             |
+   | ----------------- | ----------------- |
    | PyPI project name | `pi-coding-agent` |
-   | Owner | `Ashutosh0428` |
-   | Repository name | `pi-agent` |
-   | Workflow name | `publish.yml` |
-   | Environment name | `pypi` |
+   | Owner             | `jatinag2`        |
+   | Repository name   | `pi-agent`        |
+   | Workflow name     | `publish.yml`     |
+   | Environment name  | `pypi`            |
 
 3. In the GitHub repo: **Settings → Environments → New environment** named
    `pypi` (no secrets needed — it only scopes the OIDC identity).

@@ -5,12 +5,12 @@ version see the [README](../README.md).
 
 ## 1 · Install
 
-| Method | Command | Notes |
-|---|---|---|
-| **pipx** (recommended) | `pipx install pi-coding-agent` | isolated, `pi` on PATH |
-| uv | `uv tool install pi-coding-agent` | same idea, uv-managed |
-| pip | `pip install "pi-coding-agent[data]"` | `[data]` adds CSV analysis + slide generation |
-| Docker | `docker build -t pi-agent . && docker run -it --rm -e GROQ_API_KEY -v "$PWD":/work pi-agent` | repo clone needed for the build |
+| Method                 | Command                                                                                      | Notes                                         |
+| ---------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| **pipx** (recommended) | `pipx install pi-coding-agent`                                                               | isolated, `pi` on PATH                        |
+| uv                     | `uv tool install pi-coding-agent`                                                            | same idea, uv-managed                         |
+| pip                    | `pip install "pi-coding-agent[data]"`                                                        | `[data]` adds CSV analysis + slide generation |
+| Docker                 | `docker build -t pi-agent . && docker run -it --rm -e GROQ_API_KEY -v "$PWD":/work pi-agent` | repo clone needed for the build               |
 
 Requires Python ≥ 3.10. Check: `pi --version`.
 
@@ -19,16 +19,16 @@ Requires Python ≥ 3.10. Check: `pi --version`.
 
 ## 2 · Get an API key (pick ONE to start)
 
-| Provider | Cost | Where | Then |
-|---|---|---|---|
-| **Groq** ⭐ easiest | 🆓 no card | <https://console.groq.com/keys> | `export GROQ_API_KEY=gsk_…` |
-| Gemini | 🆓 no card | <https://aistudio.google.com/apikey> | `export GEMINI_API_KEY=…` |
-| OpenRouter | 🆓 no card | <https://openrouter.ai/keys> | `export OPENROUTER_API_KEY=…` |
-| GLM (Z.ai) | 🆓 flash model | <https://z.ai/manage-apikey/apikey-list> | `export ZAI_API_KEY=…` |
-| EURI | 🆓 tier | <https://docs.euri.ai/> | `export EURI_API_KEY=…` |
-| Anthropic | paid | <https://console.anthropic.com/settings/keys> | `export ANTHROPIC_API_KEY=sk-ant-…` |
-| OpenAI | paid | <https://platform.openai.com/api-keys> | `export OPENAI_API_KEY=sk-…` |
-| **Ollama** | 🆓 100% local | <https://ollama.com/download> | `ollama pull qwen2.5-coder:7b` — no key at all |
+| Provider            | Cost           | Where                                         | Then                                           |
+| ------------------- | -------------- | --------------------------------------------- | ---------------------------------------------- |
+| **Groq** ⭐ easiest | 🆓 no card     | <https://console.groq.com/keys>               | `export GROQ_API_KEY=gsk_…`                    |
+| Gemini              | 🆓 no card     | <https://aistudio.google.com/apikey>          | `export GEMINI_API_KEY=…`                      |
+| OpenRouter          | 🆓 no card     | <https://openrouter.ai/keys>                  | `export OPENROUTER_API_KEY=…`                  |
+| GLM (Z.ai)          | 🆓 flash model | <https://z.ai/manage-apikey/apikey-list>      | `export ZAI_API_KEY=…`                         |
+| EURI                | 🆓 tier        | <https://docs.euri.ai/>                       | `export EURI_API_KEY=…`                        |
+| Anthropic           | paid           | <https://console.anthropic.com/settings/keys> | `export ANTHROPIC_API_KEY=sk-ant-…`            |
+| OpenAI              | paid           | <https://platform.openai.com/api-keys>        | `export OPENAI_API_KEY=sk-…`                   |
+| **Ollama**          | 🆓 100% local  | <https://ollama.com/download>                 | `ollama pull qwen2.5-coder:7b` — no key at all |
 
 Put exports in your `~/.zshrc` / `~/.bashrc` to persist, or copy
 `.env.example` to `.env` in your project (auto-gitignored pattern).
@@ -54,31 +54,31 @@ pi "write a function that parses RFC3339 timestamps, with tests"
 
 ## 4 · REPL commands
 
-| Command | Does |
-|---|---|
-| `/help` | list commands |
-| `/tools` | list active tools |
+| Command       | Does                                                         |
+| ------------- | ------------------------------------------------------------ |
+| `/help`       | list commands                                                |
+| `/tools`      | list active tools                                            |
 | `/model <id>` | switch model (works mid-conversation, even across providers) |
-| `/think` | toggle extended thinking (Anthropic only, billed) |
-| `/cost` | session token count + estimated cost |
-| `/reset` | clear the conversation |
-| `/exit` | quit |
+| `/think`      | toggle extended thinking (Anthropic only, billed)            |
+| `/cost`       | session token count + estimated cost                         |
+| `/reset`      | clear the conversation                                       |
+| `/exit`       | quit                                                         |
 
 ## 5 · All CLI flags
 
-| Flag | Default | Meaning |
-|---|---|---|
-| `--provider <name>` | auto-detected | anthropic · openai · groq · openrouter · gemini · euri · glm · ollama |
-| `--model <id>` | provider default | any model id the provider serves |
-| `--dir <path>` | `.` | workspace root — the agent cannot touch files outside it |
-| `--yes` | off | auto-approve mutating tools (write/edit/bash) |
-| `--no-shell` | off | disable `run_bash` entirely |
-| `--no-stream` | off | disable token streaming |
-| `--think` | off | Anthropic extended thinking |
-| `--reflect` | off | one self-review pass after the answer (see §8) |
-| `--skills-dir <dir>` | none | load `SKILL.md` skills into the prompt |
-| `--skills-top-k <n>` | 3 | one-shot mode: inline only the n most relevant skills (0 = all) |
-| `--version` | — | print version |
+| Flag                 | Default          | Meaning                                                               |
+| -------------------- | ---------------- | --------------------------------------------------------------------- |
+| `--provider <name>`  | auto-detected    | anthropic · openai · groq · openrouter · gemini · euri · glm · ollama |
+| `--model <id>`       | provider default | any model id the provider serves                                      |
+| `--dir <path>`       | `.`              | workspace root — the agent cannot touch files outside it              |
+| `--yes`              | off              | auto-approve mutating tools (write/edit/bash)                         |
+| `--no-shell`         | off              | disable `run_bash` entirely                                           |
+| `--no-stream`        | off              | disable token streaming                                               |
+| `--think`            | off              | Anthropic extended thinking                                           |
+| `--reflect`          | off              | one self-review pass after the answer (see §8)                        |
+| `--skills-dir <dir>` | none             | load `SKILL.md` skills into the prompt                                |
+| `--skills-top-k <n>` | 3                | one-shot mode: inline only the n most relevant skills (0 = all)       |
+| `--version`          | —                | print version                                                         |
 
 ## 6 · Skills
 
@@ -104,7 +104,9 @@ name: my-skill
 description: One line on what it does.
 trigger: when the user asks for X
 ---
+
 ## How
+
 1. …
 ```
 
@@ -115,7 +117,7 @@ No code changes — just point `--skills-dir` at it.
 The agent saves durable facts with its `remember` tool to
 `.pi/memory.md` in your workspace — conventions, decisions, preferences.
 Next session in the same directory, that memory is loaded back into its
-context automatically: *day 5 continues where day 1 stopped.*
+context automatically: _day 5 continues where day 1 stopped._
 
 - Plain markdown — open it, edit it, delete lines you don't want kept.
 - Capped recall (last 4 KB) — old facts age out.
@@ -184,7 +186,7 @@ Deterministic safety checks run on every tool call (no LLM judge):
 - **Secret exfiltration blocked** — a `web_fetch`/`run_bash`/MCP call whose
   arguments contain one of your secret-env values is refused.
 - **Destructive commands confirmed** — `rm -rf /`, `curl|sh`, `sudo`, fork
-  bombs, `git push --force` require confirmation *even under `--yes`*.
+  bombs, `git push --force` require confirmation _even under `--yes`_.
 - **Untrusted content spotlighted** — text from `web_fetch`/MCP is wrapped so
   the model treats it as data, not instructions (prompt-injection defense).
 - **Secrets redacted** — key-shaped strings are masked in tool output.
@@ -194,7 +196,7 @@ All on by default. `--no-guardrails` disables them (not recommended).
 ## 12 · The web app locally
 
 ```bash
-git clone https://github.com/Ashutosh0428/pi-agent && cd pi-agent
+git clone https://github.com/jatinag2/PI-Agent && cd pi-agent
 pip install -r requirements.txt
 streamlit run streamlit_app.py        # http://localhost:8501
 ```
@@ -206,16 +208,16 @@ reach your Ollama at `localhost:11434`.
 
 ## 10 · Troubleshooting
 
-| Symptom | Cause → fix |
-|---|---|
-| `No API key found` panel | no provider key in env → §2, pick one free option |
-| `pi: command not found` | pipx PATH → `pipx ensurepath`, new terminal |
-| `requires a different Python: 3.9…` | Python too old → install 3.10+ (`brew install python@3.12`) |
+| Symptom                               | Cause → fix                                                                                         |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `No API key found` panel              | no provider key in env → §2, pick one free option                                                   |
+| `pi: command not found`               | pipx PATH → `pipx ensurepath`, new terminal                                                         |
+| `requires a different Python: 3.9…`   | Python too old → install 3.10+ (`brew install python@3.12`)                                         |
 | `model_not_found` / 404 from provider | model id wrong for that provider → `pi "list models my key supports"` or check the provider console |
-| `429` / rate limit | free-tier burst limit → wait a minute; pi already retries ≤5× with backoff |
-| Ollama: connection refused | server not running → `ollama serve`, and `ollama pull <model>` first |
-| Tools never get called | model too weak for tool use → try `llama-3.3-70b-versatile` (Groq) or any Claude/GPT |
-| Corporate proxy / SSL errors | export `HTTPS_PROXY` / `REQUESTS_CA_BUNDLE` for your proxy; vendor SDKs honor them |
+| `429` / rate limit                    | free-tier burst limit → wait a minute; pi already retries ≤5× with backoff                          |
+| Ollama: connection refused            | server not running → `ollama serve`, and `ollama pull <model>` first                                |
+| Tools never get called                | model too weak for tool use → try `llama-3.3-70b-versatile` (Groq) or any Claude/GPT                |
+| Corporate proxy / SSL errors          | export `HTTPS_PROXY` / `REQUESTS_CA_BUNDLE` for your proxy; vendor SDKs honor them                  |
 
 ## 11 · FAQ
 

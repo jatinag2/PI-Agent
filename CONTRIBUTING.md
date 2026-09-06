@@ -6,7 +6,7 @@ contributions are a new tool, a new provider, a new skill, or a fix.
 ## Dev setup
 
 ```bash
-git clone https://github.com/jatinag2 && cd pi-agent
+git clone https://github.com/jatinag2/PI-Agent && cd pi-agent
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[data,dev]"
 ```

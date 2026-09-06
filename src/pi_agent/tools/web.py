@@ -29,7 +29,7 @@ from pi_agent.tools.base import Tool
 TIMEOUT_SECONDS = 15
 MAX_BYTES = 2 * 1024 * 1024  # read at most 2 MB from the network
 MAX_TEXT_CHARS = 20_000  # return at most this much text to the model
-_USER_AGENT = "pi-agent/0.3 (+https://github.com/Ashutosh0428/pi-agent)"
+_USER_AGENT = "pi-agent/0.3 (+https://github.com/jatinag2/PI-Agent)"
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b.*?</\1>", re.DOTALL | re.IGNORECASE)

@@ -127,7 +127,7 @@ itself. No telemetry of any kind.
 ## Owner actions (the only manual steps)
 
 1. Create/log in to PyPI account → add **trusted publisher** for project
-   `pi-coding-agent` (owner `Ashutosh0428`, repo `pi-agent`, workflow
+   `pi-coding-agent` (owner `jatinag2`, repo `PI-Agent`, workflow
    `publish.yml`) — exact steps land in `docs/RELEASING.md`.
 2. Approve the final push + `v0.4.0` tag.
 

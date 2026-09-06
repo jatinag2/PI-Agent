@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-authors = [{ name = "Ashutosh Sharma" }]
+authors = [{ name = "Jatin Agrawal" }]
 keywords = [
     "ai",
     "agent",
@@ -55,10 +55,10 @@ all = ["pi-coding-agent[data]"]
 pi = "pi_agent.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Ashutosh0428/pi-agent"
-Repository = "https://github.com/Ashutosh0428/pi-agent"
-Issues = "https://github.com/Ashutosh0428/pi-agent/issues"
-Changelog = "https://github.com/Ashutosh0428/pi-agent/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/jatinag2/PI-Agent"
+Repository = "https://github.com/jatinag2/PI-Agent"
+Issues = "https://github.com/jatinag2/PI-Agent/issues"
+Changelog = "https://github.com/jatinag2/PI-Agent/blob/main/CHANGELOG.md"
 "Live Demo" = "https://mj3ivlmagpfgsjpxirxbpv.streamlit.app/"
 
 [tool.setuptools.packages.find]
