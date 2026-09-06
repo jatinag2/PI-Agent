@@ -29,7 +29,7 @@ Examples of unacceptable behavior:
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported by opening an issue or contacting the maintainer via GitHub
-([@Ashutosh0428](https://github.com/Ashutosh0428)). All complaints will be
+([@jatinag2](https://github.com/jatinag2)). All complaints will be
 reviewed and investigated promptly and fairly.
 
 ## Attribution

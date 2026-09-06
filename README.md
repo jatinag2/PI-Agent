@@ -6,13 +6,13 @@
   Minimal and transparent: you see every tool call, and the whole core fits in your head.</em>
 </p>
 
-<p align="center">
-  <a href="https://github.com/Ashutosh0428/pi-agent/actions/workflows/ci.yml"><img src="https://github.com/Ashutosh0428/pi-agent/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://pypi.org/project/pi-coding-agent/"><img src="https://img.shields.io/pypi/v/pi-coding-agent" alt="PyPI"></a>
-  <a href="https://pypi.org/project/pi-coding-agent/"><img src="https://img.shields.io/pypi/dm/pi-coding-agent" alt="Downloads"></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
-  <a href="https://mj3ivlmagpfgsjpxirxbpv.streamlit.app/"><img src="https://static.streamlit.io/badges/streamlit_badge_black_white.svg" alt="Open in Streamlit"></a>
+<a href="https://github.com/Ashutosh0428/pi-agent/actions/workflows/ci.yml"><img src="https://github.com/Ashutosh0428/pi-agent/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+<a href="https://pypi.org/project/pi-coding-agent/"><img src="https://img.shields.io/pypi/v/pi-coding-agent" alt="PyPI"></a>
+<a href="https://pypi.org/project/pi-coding-agent/"><img src="https://img.shields.io/pypi/dm/pi-coding-agent" alt="Downloads"></a>
+<a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
+<a href="https://mj3ivlmagpfgsjpxirxbpv.streamlit.app/"><img src="https://static.streamlit.io/badges/streamlit_badge_black_white.svg" alt="Open in Streamlit"></a>
+
 </p>
 
 <p align="center">
