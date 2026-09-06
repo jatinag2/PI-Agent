@@ -15,5 +15,8 @@ WORKDIR /app
 COPY . .
 RUN pip install --no-cache-dir ".[data]"
 
+# Expose the default Streamlit port
+EXPOSE 8501
+
 WORKDIR /work
-ENTRYPOINT ["pi"]
+ENTRYPOINT ["streamlit", "run", "/app/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
