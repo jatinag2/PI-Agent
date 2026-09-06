@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <b><a href="https://mj3ivlmagpfgsjpxirxbpv.streamlit.app/">🚀 Try it live</a></b> &nbsp;·&nbsp;
+  <b><a href="https://ag-agent-wprtbm2mojch7q3wzvaghg.streamlit.app/">🚀 Try it live</a></b> &nbsp;·&nbsp;
   <a href="#-install">Install</a> &nbsp;·&nbsp;
   <a href="docs/USAGE.md">📖 Usage guide</a> &nbsp;·&nbsp;
   <a href="#-skills">Skills</a> &nbsp;·&nbsp;
@@ -37,7 +37,7 @@ provider-neutral core. Inspired by the [Pi](https://github.com/badlogic/pi-mono)
 philosophy: lean, hackable, no bloat.
 
 > Built as a learning + portfolio project. The core loop is ~150 lines; the
-> transcript is provider-neutral, so adding a tool *or a model* is trivial.
+> transcript is provider-neutral, so adding a tool _or a model_ is trivial.
 
 ## 🔁 How it works
 
@@ -56,25 +56,25 @@ streaming text, a live to-do checklist, and the running token cost as it goes.
 
 ## ✨ Features
 
-| | |
-|---|---|
-| 🧠 **Multi-provider** | Claude · GPT · **Groq** · **OpenRouter** · **Gemini** · **EURI** · **GLM** (free) · **Ollama** (local, no key) — switch mid-chat with `/model`; bare `pi` auto-detects from your env keys |
-| 🔌 **MCP support** | connect any [MCP](https://modelcontextprotocol.io) server (GitHub, Postgres, Slack, …) via the standard `mcpServers` config — its tools appear as `mcp__server__tool`. Zero new dependencies |
-| 📚 **Local knowledge base** | `pi ingest docs/` → BM25 over sqlite → `pi ask "how does auth work?"` with citations. Fully offline |
-| 🛡️ **Guardrails (on by default)** | blocks secret exfiltration, confirms destructive shell commands even under `--yes`, redacts secrets, and spotlights untrusted tool output against prompt injection |
-| 🧬 **Persistent memory** | the agent saves project facts to `.pi/memory.md` (`remember` tool) and recalls them next session — day 5 continues day 1 |
-| 🔍 **Self-review** | `--reflect`: after answering, one bounded pass that re-checks the work and fixes real problems |
-| 🎯 **Skill routing** | only the most relevant skills are inlined per prompt — leaner prompts, better adherence, cheaper free tiers |
-| 📋 **Planner + live todos** | declares a plan via `update_plan`; the web app renders a live ⬜→⏳→✅ checklist |
-| 🤝 **Sub-agents** | `delegate` a focused subtask to a sequential sub-agent (no recursion) for big jobs |
-| 📦 **Project ZIP upload** | drop a zipped repo (zip-slip-safe) → *"explain this project"* (purpose, flow, components) |
-| 📊 **Data analysis** | `analyze_data` profiles a CSV/Excel like a data scientist (stats, missing %, correlations) |
-| 📑 **Slide generation** | `make_slides` builds a downloadable `.pptx` from an outline |
-| 🔁 **Resilient** | transient errors (429/5xx/timeout) auto-retry ≤5× w/ jittered backoff; bad key/request fail fast; long sessions trim history to fit the context window |
-| 🌊 **Streaming + cost** | token-by-token streaming on **every** provider (Anthropic + all OpenAI-compatible), per-turn token counts, estimated session cost (`/cost`) |
-| 🔧 **git + web** | read-only `git` inspection and an SSRF-guarded `web_fetch`, locally |
-| 📜 **Skills** | `SKILL.md` files inlined into the prompt — 12 bundled, add your own with zero code |
-| 🔒 **Sandboxed & safe** | paths confined to the workspace; public web demo runs no raw shell |
+|                                   |                                                                                                                                                                                              |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🧠 **Multi-provider**             | Claude · GPT · **Groq** · **OpenRouter** · **Gemini** · **EURI** · **GLM** (free) · **Ollama** (local, no key) — switch mid-chat with `/model`; bare `pi` auto-detects from your env keys    |
+| 🔌 **MCP support**                | connect any [MCP](https://modelcontextprotocol.io) server (GitHub, Postgres, Slack, …) via the standard `mcpServers` config — its tools appear as `mcp__server__tool`. Zero new dependencies |
+| 📚 **Local knowledge base**       | `pi ingest docs/` → BM25 over sqlite → `pi ask "how does auth work?"` with citations. Fully offline                                                                                          |
+| 🛡️ **Guardrails (on by default)** | blocks secret exfiltration, confirms destructive shell commands even under `--yes`, redacts secrets, and spotlights untrusted tool output against prompt injection                           |
+| 🧬 **Persistent memory**          | the agent saves project facts to `.pi/memory.md` (`remember` tool) and recalls them next session — day 5 continues day 1                                                                     |
+| 🔍 **Self-review**                | `--reflect`: after answering, one bounded pass that re-checks the work and fixes real problems                                                                                               |
+| 🎯 **Skill routing**              | only the most relevant skills are inlined per prompt — leaner prompts, better adherence, cheaper free tiers                                                                                  |
+| 📋 **Planner + live todos**       | declares a plan via `update_plan`; the web app renders a live ⬜→⏳→✅ checklist                                                                                                             |
+| 🤝 **Sub-agents**                 | `delegate` a focused subtask to a sequential sub-agent (no recursion) for big jobs                                                                                                           |
+| 📦 **Project ZIP upload**         | drop a zipped repo (zip-slip-safe) → _"explain this project"_ (purpose, flow, components)                                                                                                    |
+| 📊 **Data analysis**              | `analyze_data` profiles a CSV/Excel like a data scientist (stats, missing %, correlations)                                                                                                   |
+| 📑 **Slide generation**           | `make_slides` builds a downloadable `.pptx` from an outline                                                                                                                                  |
+| 🔁 **Resilient**                  | transient errors (429/5xx/timeout) auto-retry ≤5× w/ jittered backoff; bad key/request fail fast; long sessions trim history to fit the context window                                       |
+| 🌊 **Streaming + cost**           | token-by-token streaming on **every** provider (Anthropic + all OpenAI-compatible), per-turn token counts, estimated session cost (`/cost`)                                                  |
+| 🔧 **git + web**                  | read-only `git` inspection and an SSRF-guarded `web_fetch`, locally                                                                                                                          |
+| 📜 **Skills**                     | `SKILL.md` files inlined into the prompt — 12 bundled, add your own with zero code                                                                                                           |
+| 🔒 **Sandboxed & safe**           | paths confined to the workspace; public web demo runs no raw shell                                                                                                                           |
 
 **Tools:** `update_plan` · `delegate` · `remember` (persistent memory, local) ·
 `read_file` · `write_file` · `edit_file` · `apply_patch` (atomic multi-file) ·
@@ -90,24 +90,22 @@ uv tool install pi-coding-agent     # or with uv
 pip install "pi-coding-agent[data]" # or plain pip (+ data analysis & slides)
 ```
 
-(For hacking on it: `git clone https://github.com/Ashutosh0428/pi-agent && cd pi-agent && pip install -e ".[data,dev]"` — see [CONTRIBUTING.md](CONTRIBUTING.md).)
-
 **No key? Just run `pi`.** It auto-detects whichever provider key you've set —
 and with none at all it shows a quick-setup panel with three free paths (Groq,
 Gemini, Ollama) instead of an error.
 
 Pick a provider and set its key (env var, or `cp .env.example .env`):
 
-| Provider | Cost | Setup |
-|---|---|---|
-| Anthropic | paid | `export ANTHROPIC_API_KEY=sk-ant-...` |
-| OpenAI | paid | `export OPENAI_API_KEY=sk-...` |
-| Groq | 🆓 free | `export GROQ_API_KEY=...` · [get a key](https://console.groq.com/keys) |
-| OpenRouter | 🆓 free | `export OPENROUTER_API_KEY=...` · [get a key](https://openrouter.ai/keys) |
-| Gemini | 🆓 free + paid | `export GEMINI_API_KEY=...` · [get a key](https://aistudio.google.com/apikey) |
-| EURI | 🆓 free | `export EURI_API_KEY=...` · [get a key](https://docs.euri.ai/) · 40+ models (OpenAI-compatible) |
-| GLM (Z.ai) | 🆓 free + paid | `export ZAI_API_KEY=...` · [get a key](https://z.ai/manage-apikey/apikey-list) · `glm-4.5-flash` free, `glm-5.1` paid |
-| **Ollama** | 🆓 local, no key | install Ollama → `ollama pull llama3.1` (runs at `localhost:11434`) |
+| Provider   | Cost             | Setup                                                                                                                 |
+| ---------- | ---------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Anthropic  | paid             | `export ANTHROPIC_API_KEY=sk-ant-...`                                                                                 |
+| OpenAI     | paid             | `export OPENAI_API_KEY=sk-...`                                                                                        |
+| Groq       | 🆓 free          | `export GROQ_API_KEY=...` · [get a key](https://console.groq.com/keys)                                                |
+| OpenRouter | 🆓 free          | `export OPENROUTER_API_KEY=...` · [get a key](https://openrouter.ai/keys)                                             |
+| Gemini     | 🆓 free + paid   | `export GEMINI_API_KEY=...` · [get a key](https://aistudio.google.com/apikey)                                         |
+| EURI       | 🆓 free          | `export EURI_API_KEY=...` · [get a key](https://docs.euri.ai/) · 40+ models (OpenAI-compatible)                       |
+| GLM (Z.ai) | 🆓 free + paid   | `export ZAI_API_KEY=...` · [get a key](https://z.ai/manage-apikey/apikey-list) · `glm-4.5-flash` free, `glm-5.1` paid |
+| **Ollama** | 🆓 local, no key | install Ollama → `ollama pull llama3.1` (runs at `localhost:11434`)                                                   |
 
 **Any model works** — the web app has a per-provider model dropdown (+ a custom
 field), and `--model` takes any id the provider offers, free or paid:
@@ -144,6 +142,7 @@ cat .pi/mcp.json
 #   "env": {"GITHUB_TOKEN": "ghp_…"}}}}
 pi   # /mcp lists the connected tools
 ```
+
 Flags: `--provider` · `--model` · `--dir` · `--yes` · `--no-shell` · `--no-stream` · `--think` · `--skills-dir` · `--version`.
 
 ### 🐳 Docker
@@ -165,7 +164,7 @@ docker run -it --rm -e GROQ_API_KEY -v "$PWD":/work pi-agent "explain this repo"
 
 ## 🌐 Web demo
 
-A public-safe slice of pi ([live](https://mj3ivlmagpfgsjpxirxbpv.streamlit.app/)) — or run it yourself:
+A public-safe slice of pi ([live](https://ag-agent-wprtbm2mojch7q3wzvaghg.streamlit.app/)) — or run it yourself:
 
 ```bash
 pip install -r requirements.txt
@@ -176,7 +175,7 @@ streamlit run streamlit_app.py      # http://localhost:8501
 - **Live streaming** — the answer renders token by token while tool steps stay visible.
 - **Bring your own key** — used only for the session; never stored, logged, or committed.
 - **No raw shell** — visitors get `run_command` (read-only allowlist, no network, sandboxed) instead of `run_bash`.
-- **Upload a file, a project `.zip`, or a CSV** — then *review*, *explain the project*, or *analyze the data and make a deck*.
+- **Upload a file, a project `.zip`, or a CSV** — then _review_, _explain the project_, or _analyze the data and make a deck_.
 - **Sandboxed** — file tools + ZIP extraction confined to a fresh per-session temp dir (zip-slip-guarded).
 
 Locally the web app can also reach **Ollama**; the hosted demo can't (no localhost
@@ -225,7 +224,7 @@ move between Claude, GPT, Groq, OpenRouter, and Ollama — even mid-chat.
 
 ## 📜 Skills
 
-A *skill* is a `SKILL.md` describing how to do one task well; pi inlines a skill
+A _skill_ is a `SKILL.md` describing how to do one task well; pi inlines a skill
 index + contents into the system prompt, so the model applies them without
 spending a tool call to read them.
 

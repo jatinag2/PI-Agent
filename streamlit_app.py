@@ -308,7 +308,7 @@ with st.sidebar:
         "🔒 **Safe demo:** shell disabled, file tools sandboxed to a temporary "
         "per-session folder. Your key stays in your session."
     )
-    st.caption("[Source on GitHub](https://github.com/Ashutosh0428/pi-agent)")
+    st.caption("[Source on GitHub](https://github.com/jatinag2/PI-Agent)")
 
 # ── Header ───────────────────────────────────────────────────────────────────
 st.markdown(
