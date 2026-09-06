@@ -270,4 +270,4 @@ and `pi benchmark` — the full plan with phases lives in
 
 ---
 
-<p align="center"><em>Built by Ashutosh Sharma.</em></p>
+
