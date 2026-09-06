@@ -18,7 +18,7 @@
 ---
 
 <p align="center">
-  <a href="https://mj3ivlmagpfgsjpxirxbpv.streamlit.app/"><img src="docs/assets/web-demo.png" alt="pi-agent web demo — free Groq default, BYO key" width="85%"></a>
+  <a href="https://ag-agent-wprtbm2mojch7q3wzvaghg.streamlit.app"><img src="docs/assets/web-demo.png" alt="pi-agent web demo — free Groq default, BYO key" width="85%"></a>
 </p>
 
 pi lets an LLM **read, edit, and run code** in your working directory through a
@@ -269,5 +269,3 @@ and `pi benchmark` — the full plan with phases lives in
 [ROADMAP.md](ROADMAP.md). Release history: [CHANGELOG.md](CHANGELOG.md).
 
 ---
-
-
